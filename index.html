@@ -271,6 +271,14 @@ const mName=id=>{const m=members().find(x=>x.id===id);return m?m.name:'(removed)
 const mColor=id=>{const i=members().findIndex(x=>x.id===id);return COLORS[(i<0?0:i)%COLORS.length]};
 const initials=n=>esc(String(n||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase());
 const av=id=>`<div class="av" style="background:${mColor(id)}">${initials(mName(id))}</div>`;
+const fams=()=>(trip&&trip.families)||[];
+const hKey=id=>{const m=members().find(x=>x.id===id);return m&&m.fam&&fams().some(f=>f.id===m.fam)?m.fam:id};
+const hName=k=>{const f=fams().find(x=>x.id===k);return f?f.name:mName(k)};
+const hMembers=k=>members().filter(m=>hKey(m.id)===k);
+const hKeys=()=>[...new Set(members().map(m=>hKey(m.id)))];
+const hRep=k=>{const ms=hMembers(k);return (me&&ms.some(m=>m.id===me))?me:(ms[0]||{}).id};
+const hAv=k=>`<div class="av" style="background:${COLORS[Math.max(0,hKeys().indexOf(k))%COLORS.length]}">${initials(hName(k))}</div>`;
+function hNet(net){const o={};hKeys().forEach(k=>o[k]=0);for(const k in net){const h=hKey(k);o[h]=(o[h]||0)+net[k]}return o}
 function compute(){
   const net={},paid={},share={};members().forEach(m=>{net[m.id]=0;paid[m.id]=0;share[m.id]=0});
   let total=0,est=0;const byCur={};
@@ -306,7 +314,7 @@ function render(){
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   fab.style.display=(members().length>=2&&tab!=='setup')?'':'none';
   let h='';
-  if(members().length>=2&&!me&&!window.__asked&&!$('#modal').classList.contains('open')){window.__asked=true;setTimeout(openPickMe,300)}
+  if(members().length>=2&&!me&&!window.__asked&&!$('#modal').classList.contains('open')){window.__asked=true;setTimeout(()=>{if(!me&&!$('#modal').classList.contains('open'))openPickMe()},300)}
   if(members().length>=2&&!me&&tab!=='setup')h+=`<div class="banner">Tell the app who you are so your entries default to you. <a href="#" data-act="pickme">Choose</a></div>`;
   v.innerHTML=h+(tab==='balances'?viewBalances():tab==='expenses'?viewExpenses():viewSetup());
 }
@@ -323,13 +331,13 @@ function viewHome(){
 }
 
 function viewBalances(){
-  const {net,paid,share,total,est,byCur}=compute();const tx=simplify(net);const ms=members();const fc=foreignCurs();
+  const {net,paid,share,total,est,byCur}=compute();const hn=hNet(net);const tx=simplify(Object.assign({},hn));const ms=members();const fc=foreignCurs();
   const n=ms.length||1;const maxS=Math.max(1,...ms.map(m=>share[m.id]||0));
   const curLine=Object.entries(byCur).sort((a,b)=>b[1].b-a[1].b).map(([c,v])=>c===base()?fmt(v.o):`${fmtCur(v.o,c)} (≈${fmt(v.b)})`).join(' + ');
   let h='';
-  if(me&&ms.some(m=>m.id===me)){const mn=net[me]||0;const mine=tx.filter(t=>t.from===me||t.to===me);
-    h+=`<div class="card you"><h2>${esc(mName(me))}</h2>${mn===0?'<div class="big muted">All square ✓</div><div class="muted">You don’t owe anything.</div>':mn>0?`<div class="muted">Others owe you</div><div class="big pos">${fmt(mn)}</div>`:`<div class="muted">You owe</div><div class="big neg">${fmt(-mn)}</div>`}
-    ${mine.map(t=>`<div class="srow" style="justify-content:center;gap:8px">${t.from===me?`Pay <b>${esc(mName(t.to))}</b>`:`<b>${esc(mName(t.from))}</b> pays you`} <b>${fmt(t.c)}</b></div>`).join('')}
+  if(me&&ms.some(m=>m.id===me)){const mh=hKey(me),isF=mh!==me;const mn=hn[mh]||0;const mine=tx.filter(t=>t.from===mh||t.to===mh);
+    h+=`<div class="card you"><h2>${esc(isF?hName(mh)+' (your family)':mName(me))}</h2>${mn===0?`<div class="big muted">All square ✓</div><div class="muted">${isF?'Your family doesn’t':'You don’t'} owe anything.</div>`:mn>0?`<div class="muted">Others owe ${isF?'your family':'you'}</div><div class="big pos">${fmt(mn)}</div>`:`<div class="muted">${isF?'Your family owes':'You owe'}</div><div class="big neg">${fmt(-mn)}</div>`}
+    ${mine.map(t=>`<div class="srow" style="justify-content:center;gap:8px">${t.from===mh?`Pay <b>${esc(hName(t.to))}</b>`:`<b>${esc(hName(t.from))}</b> pays ${isF?'your family':'you'}`} <b>${fmt(t.c)}</b></div>`).join('')}
     ${est>0?'<div class="muted small" style="margin-top:6px">Some amounts are still estimates.</div>':''}</div>`}
   h+=`<div class="card"><h2>Total trip spend (${esc(base())})</h2><div class="big">${fmt(total)}</div>
     <div class="muted small">${expenses.filter(e=>e.type!=='payment').length} expenses · avg ${fmt(Math.round(total/n))} per member</div>
@@ -344,13 +352,17 @@ function viewBalances(){
   if(!tx.length)h+=`<div class="muted">${total?'All settled. Nobody owes anything.':'No expenses yet.'}</div>`;
   else{h+=`<div class="muted small">Fewest transfers to clear everyone:</div>`;
     tx.forEach(t=>{const alt=fc.map(c=>inForeign(t.c,c)).filter(Boolean).join(' / ');
-      h+=`<div class="tx">${av(t.from)}<div class="l" style="flex:1;min-width:0"><b>${esc(mName(t.from))}</b><span class="small muted">pays ${esc(mName(t.to))}</span></div>
-    <div class="r"><div class="neg">${fmt(t.c)}</div>${alt?`<div class="small muted">≈${alt}</div>`:''}<button class="btn sm ghost" data-act="settle" data-from="${t.from}" data-to="${t.to}" data-c="${t.c}" style="margin-top:4px">Record</button></div></div>`})}
+      h+=`<div class="tx">${hAv(t.from)}<div class="l" style="flex:1;min-width:0"><b>${esc(hName(t.from))}</b><span class="small muted">pays ${esc(hName(t.to))}</span></div>
+    <div class="r"><div class="neg">${fmt(t.c)}</div>${alt?`<div class="small muted">≈${alt}</div>`:''}<button class="btn sm ghost" data-act="settle" data-from="${hRep(t.from)}" data-to="${hRep(t.to)}" data-c="${t.c}" style="margin-top:4px">Record</button></div></div>`})}
   h+=`<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn ghost sm" data-act="settle">+ Record a payment</button><button class="btn ghost sm" data-act="summary">Copy summary for group chat</button></div></div>`;
-  h+=`<div class="card"><h2>By member (${esc(base())})</h2><div class="grid3"><span class="h">Member</span><span class="h r">Paid</span><span class="h r">Share</span><span class="h r">Net</span>`;
-  ms.forEach(m=>{const nn=net[m.id]||0;h+=`<span><b>${esc(m.name)}</b>${m.weight!==1?` <span class="muted small">×${m.weight}</span>`:''}<div class="bar"><i style="width:${Math.round((share[m.id]||0)/maxS*100)}%"></i></div></span>
-    <span class="r">${fmt(paid[m.id]||0)}</span><span class="r">${fmt(share[m.id]||0)}</span><span class="r ${nn>0?'pos':nn<0?'neg':'muted'}">${nn>0?'+':''}${fmt(nn)}</span>`});
-  h+=`</div><div class="muted small" style="margin-top:10px">Paid = cash or card put out. Share = what they consumed. Net + means others owe them.</div></div>`;
+  const hasF=fams().length>0;
+  h+=`<div class="card"><h2>By ${hasF?'family':'member'} (${esc(base())})</h2><div class="grid3"><span class="h">${hasF?'Family / member':'Member'}</span><span class="h r">Paid</span><span class="h r">Share</span><span class="h r">Net</span>`;
+  hKeys().forEach(k=>{const mm=hMembers(k);const isF=k!==mm[0].id||mm.length>1&&fams().some(f=>f.id===k);
+    const sp=mm.reduce((a,m)=>a+(paid[m.id]||0),0),ss=mm.reduce((a,m)=>a+(share[m.id]||0),0),nn=hn[k]||0;
+    h+=`<span><b>${isF?'👪 ':''}${esc(hName(k))}</b>${!isF&&mm[0].weight!==1?` <span class="muted small">×${mm[0].weight}</span>`:''}<div class="bar"><i style="width:${Math.round(ss/Math.max(1,...hKeys().map(x=>hMembers(x).reduce((a,m)=>a+(share[m.id]||0),0)))*100)}%"></i></div></span>
+    <span class="r">${fmt(sp)}</span><span class="r">${fmt(ss)}</span><span class="r ${nn>0?'pos':nn<0?'neg':'muted'}">${nn>0?'+':''}${fmt(nn)}</span>`;
+    if(isF)mm.forEach(m=>{h+=`<span class="small muted" style="padding-left:22px">${esc(m.name)}${m.weight!==1?' ×'+m.weight:''}</span><span class="r small muted">${fmt(paid[m.id]||0)}</span><span class="r small muted">${fmt(share[m.id]||0)}</span><span></span>`})});
+  h+=`</div><div class="muted small" style="margin-top:10px">Paid = cash or card put out. Share = what they consumed. Net + means others owe them.${hasF?' Families settle as one.':''}</div></div>`;
   const byCat={};expenses.filter(e=>e.type!=='payment').forEach(e=>{const k=e.category||'Others';byCat[k]=(byCat[k]||0)+baseC(e)});
   const cats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
   if(cats.length&&total){h+=`<div class="card"><h2>By category</h2>`;cats.forEach(([k,c])=>{h+=`<div class="row"><div class="ico">${CATS[k]||'🧾'}</div><div class="l"><b>${esc(k)}</b><div class="bar"><i style="width:${Math.round(c/total*100)}%"></i></div></div><div class="r"><b>${fmt(c)}</b><div class="small muted">${Math.round(c/total*100)}%</div></div></div>`});h+=`</div>`}
@@ -387,13 +399,17 @@ function viewSetup(){
    <div class="link" id="shareLink">${esc(tripLink())}</div>
    <div class="actions"><button class="btn" data-act="share">Share link</button><button class="btn ghost" data-act="copyLink">Copy</button></div></div>`;
   if(t.members.length)h+=`<div class="card"><h2>This phone belongs to</h2><select id="meSel"><option value="">Choose…</option>${t.members.map(m=>`<option value="${m.id}" ${me===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select><div class="muted small" style="margin-top:6px">Sets “Paid by” to you by default. Saved on this phone only.</div></div>`;
-  h+=`<div class="card"><h2>Members (${t.members.length})</h2>
-   <div class="muted small">“Shares” is the default weight in equal splits. Use 1 per adult, 0.5 for a small child, or add a whole household as one member with shares = number of people.</div>`;
-  t.members.forEach(m=>{h+=`<div class="row">${av(m.id)}<div class="l"><input data-mname="${m.id}" value="${esc(m.name)}"></div>
+  const fl=t.families||[];const famSel=(attr,sel)=>`<select ${attr} style="margin-top:6px;font-size:15px;padding:9px"><option value="">On their own</option>${fl.map(f=>`<option value="${f.id}" ${sel===f.id?'selected':''}>👪 ${esc(f.name)}</option>`).join('')}</select>`;
+  h+=`<div class="card"><h2>Families (${fl.length})</h2><div class="muted small">People in the same family settle as one. Each person still has their own share, so an expense can include you and your wife but not your son.</div>`;
+  fl.forEach(f=>{const n=t.members.filter(m=>m.fam===f.id).length;h+=`<div class="row"><div class="ico">👪</div><div class="l"><input data-fname="${f.id}" value="${esc(f.name)}"></div><span class="small muted" style="width:70px;text-align:center">${n} ${n===1?'person':'people'}</span>${n?'':`<button class="btn sm danger" data-act="rmFam" data-id="${f.id}">✕</button>`}</div>`});
+  h+=`<div class="row"><div class="l"><input id="newF" placeholder="Family name, e.g. Navarrete family"></div><button class="btn sm" data-act="addFam">Add</button></div>${fl.length?'<div class="actions"><button class="btn ghost" data-act="saveFams">Save family names</button></div>':''}</div>`;
+  h+=`<div class="card"><h2>People (${t.members.length})</h2>
+   <div class="muted small">Add each person and pick their family. “Shares” is their weight in equal splits: 1 per adult, 0.5 for a small child.</div>`;
+  t.members.forEach(m=>{h+=`<div class="row">${av(m.id)}<div class="l"><input data-mname="${m.id}" value="${esc(m.name)}">${fl.length?famSel(`data-mfam="${m.id}"`,m.fam):''}</div>
    <input type="number" step="0.5" min="0" data-mw="${m.id}" value="${m.weight}" style="width:74px" title="Shares">
    ${used.has(m.id)?'<span class="small muted" style="width:54px;text-align:center">in use</span>':`<button class="btn sm danger" data-act="rmMember" data-id="${m.id}">✕</button>`}</div>`});
-  h+=`<div class="row"><div class="l"><input id="newM" placeholder="Add name (e.g. Lola, Tito Ben)"></div><input type="number" step="0.5" min="0" id="newW" value="1" style="width:74px"><button class="btn sm" data-act="addMember">Add</button></div>
-   ${t.members.length?'<div class="actions"><button class="btn ghost" data-act="saveMembers">Save member edits</button></div>':''}`;
+  h+=`<div class="row"><div class="l"><input id="newM" placeholder="Add name (e.g. Lola, Tito Ben)">${fl.length?famSel('id="newMF"',''):''}</div><input type="number" step="0.5" min="0" id="newW" value="1" style="width:74px"><button class="btn sm" data-act="addMember">Add</button></div>
+   ${t.members.length?'<div class="actions"><button class="btn ghost" data-act="saveMembers">Save changes to people</button></div>':''}`;
   if(t.members.length<2)h+=`<div class="note ok">Add at least 2 members to start logging expenses.</div>`;
   h+=`</div>`;
   h+=`<div class="card"><h2>Trip FX rates</h2><div class="muted small">Used for foreign-currency cash spends, and as the estimate for card charges until the bill posts. Changing a rate re-values every expense that uses it.</div>`;
@@ -479,7 +495,7 @@ function drawFx(){
 function drawSplit(){
   const ms=members();const box=$('#splitBox');if(!box)return;const cur=form.cur;
   if(form.mode==='shares'){
-    box.innerHTML=`<div style="display:flex;gap:8px;margin:10px 0 4px"><button class="btn sm ghost" data-act="all">Everyone</button><button class="btn sm ghost" data-act="none">Nobody</button></div>`+
+    box.innerHTML=`<div style="display:flex;gap:8px;margin:10px 0 4px;flex-wrap:wrap"><button class="btn sm ghost" data-act="all">Everyone</button><button class="btn sm ghost" data-act="none">Nobody</button>${fams().map(f=>`<button class="btn sm ghost" data-act="famtog" data-v="${f.id}">👪 ${esc(f.name)}</button>`).join('')}</div>`+
      ms.map(m=>`<div class="mrow"><input type="checkbox" data-ck="${m.id}" ${form.sh[m.id]>0?'checked':''}><span>${esc(m.name)}</span><input type="number" step="0.5" min="0" data-sh="${m.id}" value="${form.sh[m.id]}"><span class="calc" data-cv="${m.id}"></span></div>`).join('')+
      `<div class="muted small" style="margin-top:6px">Tick who shares this. The number is their share (e.g. 0.5 for a child).</div>`;
   }else{
@@ -559,15 +575,15 @@ function savePay(){
 }
 
 function summaryText(){
-  const {net,paid,share,total,est,byCur}=compute();const tx=simplify(net);
+  const {net,paid,share,total,est,byCur}=compute();const tx=simplify(hNet(net));
   let d='';try{d=new Date().toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}catch(e){}
   let s=`${trip.name} expense summary (as of ${d})\nTotal spent: ${fmt(total)}\n`;
   const parts=Object.entries(byCur).filter(([c])=>c!==base());
   if(parts.length)s+=parts.map(([c,v])=>`• ${fmtCur(v.o,c)} = ${fmt(v.b)}`).join('\n')+'\n';
   const rs=foreignCurs().map(c=>`1 ${c} = ${rates()[c]} ${base()}`).join(', ');
   if(est>0)s+=`Note: ${fmt(est)} uses estimated rates (${rs}). Final once card bills post.\n`;
-  s+='\n'+(tx.length?'To settle up:\n'+tx.map(t=>`• ${mName(t.from)} pays ${mName(t.to)} ${fmt(t.c)}`).join('\n'):'Everyone is settled up.');
-  s+='\n\nPer person (paid / share):\n'+members().map(m=>`• ${m.name}: ${fmt(paid[m.id]||0)} / ${fmt(share[m.id]||0)}`).join('\n');
+  s+='\n'+(tx.length?'To settle up:\n'+tx.map(t=>`• ${hName(t.from)} pays ${hName(t.to)} ${fmt(t.c)}`).join('\n'):'Everyone is settled up.');
+  s+='\n\nPaid / share:\n'+hKeys().map(k=>{const mm=hMembers(k);const sp=mm.reduce((a,m)=>a+(paid[m.id]||0),0),ss=mm.reduce((a,m)=>a+(share[m.id]||0),0);return `• ${hName(k)}: ${fmt(sp)} / ${fmt(ss)}`+(fams().some(f=>f.id===k)?` (${mm.map(m=>m.name).join(', ')})`:'')}).join('\n');
   s+='\n\nDetails: '+tripLink();
   return s;
 }
@@ -622,11 +638,15 @@ document.addEventListener('click',async ev=>{
     const t=clone(trip);t.rates=t.rates||{};t.rates[c]=r;store.saveTrip(t);toast(c+' rate added')}
   else if(a==='rmRate'){const t=clone(trip);delete t.rates[b.dataset.c];store.saveTrip(t)}
   else if(a==='saveRates'){const t=clone(trip);let bad=false;Object.keys(t.rates||{}).forEach(c=>{const el=document.querySelector(`[data-rate="${c}"]`);const r=el?num(el.value):0;if(r>0)t.rates[c]=r;else bad=true});if(bad)return toast('Rates must be above zero');store.saveTrip(t);toast('Rates updated. Balances re-valued')}
+  else if(a==='addFam'){const n=$('#newF').value.trim();if(!n)return toast('Type a family name');const t=clone(trip);t.families=t.families||[];if(t.families.some(f=>f.name.toLowerCase()===n.toLowerCase()))return toast('That family already exists');t.families.push({id:'f'+newId(),name:n});store.saveTrip(t);toast(n+' added. Now pick it for each person below.')}
+  else if(a==='rmFam'){const t=clone(trip);t.families=(t.families||[]).filter(f=>f.id!==b.dataset.id);store.saveTrip(t)}
+  else if(a==='saveFams'){const t=clone(trip);(t.families||[]).forEach(f=>{const el=document.querySelector(`[data-fname="${f.id}"]`);if(el&&el.value.trim())f.name=el.value.trim()});store.saveTrip(t);toast('Family names saved')}
+  else if(a==='famtog'){const ids=members().filter(m=>m.fam===b.dataset.v).map(m=>m.id);const allOn=ids.every(i=>form.sh[i]>0);ids.forEach(i=>{const m=members().find(x=>x.id===i);form.sh[i]=allOn?0:(m.weight||1)});drawSplit()}
   else if(a==='addMember'){const n=$('#newM').value.trim();if(!n)return toast('Type a name');const w=Math.max(0,parseFloat($('#newW').value)||1);
     const t=clone(trip);if(t.members.some(m=>m.name.toLowerCase()===n.toLowerCase()))return toast('That name is already on the list');
-    t.members.push({id:'m'+newId(),name:n,weight:w});store.saveTrip(t);toast(n+' added');const el=$('#newM');if(el)el.focus()}
+    const nf=$('#newMF');t.members.push({id:'m'+newId(),name:n,weight:w,fam:nf&&nf.value?nf.value:null});store.saveTrip(t);toast(n+' added');const el=$('#newM');if(el)el.focus()}
   else if(a==='rmMember'){const t=clone(trip);t.members=t.members.filter(m=>m.id!==b.dataset.id);store.saveTrip(t);if(me===b.dataset.id){me=null;ls.set('ts_me_'+tripId,null)}}
-  else if(a==='saveMembers'){const t=clone(trip);t.members.forEach(m=>{const ni=document.querySelector(`[data-mname="${m.id}"]`),wi=document.querySelector(`[data-mw="${m.id}"]`);if(ni&&ni.value.trim())m.name=ni.value.trim();if(wi)m.weight=Math.max(0,parseFloat(wi.value)||0)});store.saveTrip(t);toast('Members saved')}
+  else if(a==='saveMembers'){const t=clone(trip);t.members.forEach(m=>{const ni=document.querySelector(`[data-mname="${m.id}"]`),wi=document.querySelector(`[data-mw="${m.id}"]`);if(ni&&ni.value.trim())m.name=ni.value.trim();const fi=document.querySelector(`[data-mfam="${m.id}"]`);if(fi)m.fam=fi.value||null;if(wi)m.weight=Math.max(0,parseFloat(wi.value)||0)});store.saveTrip(t);toast('Members saved')}
   else if(a==='wipe'){if(!wipeArmed){wipeArmed=true;b.textContent='Tap again to delete everything';setTimeout(()=>{wipeArmed=false;const x=$('#wipeBtn');if(x)x.textContent='Clear all expenses'},4000);return}
     wipeArmed=false;expenses.map(e=>e.id).forEach(id=>store.delExpense(id));toast('All expenses cleared')}
 });
