@@ -1,6 +1,6 @@
 // Offline shell: network first, cache fallback. Firestore traffic is never cached here
 // (the Firebase SDK keeps its own offline copy of trip data).
-const CACHE = 'tripsplit-v1';
+const CACHE = 'tripsplit-v2';
 const SHELL = ['./', './index.html', './config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

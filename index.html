@@ -85,15 +85,37 @@ header{padding-top:env(safe-area-inset-top)}
 .hero img{width:84px;height:84px;border-radius:20px}
 .hero h1{font-size:26px;margin:14px 0 6px}
 .link{word-break:break-all;font:13px ui-monospace,Menlo,monospace;background:var(--bg);padding:10px;border-radius:10px;margin-top:8px}
+/* senior-friendly sizing */
+body{font-size:17px}
+input,select{font-size:18px;padding:13px 14px}
+.btn{padding:13px 18px;font-size:16px;min-height:50px}
+.btn.sm{min-height:42px;padding:8px 13px;font-size:15px}
+nav button{font-size:15px;padding:12px 0 13px}
+.sheet label,.card label{font-size:15px;color:var(--ink);text-transform:none;font-weight:700;margin:20px 0 8px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:2px solid var(--line);background:#fff;border-radius:12px;padding:11px 14px;font:600 16px inherit;color:var(--ink);cursor:pointer;min-height:50px}
+.chip.on{border-color:var(--accent);background:var(--accent2);color:var(--accent)}
+.amt{font-size:36px;font-weight:800;text-align:center;padding:14px}
+.sumbox{background:var(--bg);border-radius:12px;padding:6px 14px}
+.srow{display:flex;justify-content:space-between;align-items:center;padding:7px 0;font-size:16px}
+.linkbtn{background:none;border:0;color:var(--accent);font:700 16px inherit;padding:10px 0;cursor:pointer}
+.you{text-align:center}.you .big{font-size:38px;margin:4px 0 8px}
+.sheet .actions.sticky{position:sticky;bottom:-24px;background:#fff;padding:12px 0 8px;margin-top:22px;border-top:1px solid var(--line)}
+.small{font-size:14px}.x{font-size:32px}
+.fab{font-size:18px;padding:17px 32px}
+.toast{font-size:17px;padding:14px 20px;top:auto;bottom:100px}
+.mrow{grid-template-columns:auto 1fr 84px 100px}
+.mrow input[type=checkbox]{width:24px;height:24px}
+.grid3{font-size:15px}
 </style>
 </head>
 <body>
 <header><div class="in">
   <div class="ttl"><div style="display:flex;align-items:center;min-width:0"><button class="hbtn" id="tripsBtn" data-act="home" style="display:none">‹ Trips</button><h1 id="tripName">TripSplit</h1></div><span class="pill" id="status"></span></div>
   <nav id="tabs">
-    <button data-tab="balances" class="on">Balances</button>
-    <button data-tab="expenses">Expenses</button>
-    <button data-tab="setup">Trip setup</button>
+    <button data-tab="balances" class="on">💰 Who owes</button>
+    <button data-tab="expenses">🧾 Expenses</button>
+    <button data-tab="setup">⚙️ Setup</button>
   </nav>
 </div></header>
 <div class="wrap" id="view"></div>
@@ -284,6 +306,7 @@ function render(){
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   fab.style.display=(members().length>=2&&tab!=='setup')?'':'none';
   let h='';
+  if(members().length>=2&&!me&&!window.__asked&&!$('#modal').classList.contains('open')){window.__asked=true;setTimeout(openPickMe,300)}
   if(members().length>=2&&!me&&tab!=='setup')h+=`<div class="banner">Tell the app who you are so your entries default to you. <a href="#" data-act="pickme">Choose</a></div>`;
   v.innerHTML=h+(tab==='balances'?viewBalances():tab==='expenses'?viewExpenses():viewSetup());
 }
@@ -303,7 +326,12 @@ function viewBalances(){
   const {net,paid,share,total,est,byCur}=compute();const tx=simplify(net);const ms=members();const fc=foreignCurs();
   const n=ms.length||1;const maxS=Math.max(1,...ms.map(m=>share[m.id]||0));
   const curLine=Object.entries(byCur).sort((a,b)=>b[1].b-a[1].b).map(([c,v])=>c===base()?fmt(v.o):`${fmtCur(v.o,c)} (≈${fmt(v.b)})`).join(' + ');
-  let h=`<div class="card"><h2>Total trip spend (${esc(base())})</h2><div class="big">${fmt(total)}</div>
+  let h='';
+  if(me&&ms.some(m=>m.id===me)){const mn=net[me]||0;const mine=tx.filter(t=>t.from===me||t.to===me);
+    h+=`<div class="card you"><h2>${esc(mName(me))}</h2>${mn===0?'<div class="big muted">All square ✓</div><div class="muted">You don’t owe anything.</div>':mn>0?`<div class="muted">Others owe you</div><div class="big pos">${fmt(mn)}</div>`:`<div class="muted">You owe</div><div class="big neg">${fmt(-mn)}</div>`}
+    ${mine.map(t=>`<div class="srow" style="justify-content:center;gap:8px">${t.from===me?`Pay <b>${esc(mName(t.to))}</b>`:`<b>${esc(mName(t.from))}</b> pays you`} <b>${fmt(t.c)}</b></div>`).join('')}
+    ${est>0?'<div class="muted small" style="margin-top:6px">Some amounts are still estimates.</div>':''}</div>`}
+  h+=`<div class="card"><h2>Total trip spend (${esc(base())})</h2><div class="big">${fmt(total)}</div>
     <div class="muted small">${expenses.filter(e=>e.type!=='payment').length} expenses · avg ${fmt(Math.round(total/n))} per member</div>
     ${curLine?`<div class="small" style="margin-top:6px">${curLine}</div>`:''}
     ${est>0?`<div class="note bad">${fmt(est)} is at estimated FX rates. Balances will move when card bills post or the trip rate changes.</div>`:''}</div>`;
@@ -388,58 +416,80 @@ function openModal(html){$('#sheet').innerHTML=html;$('#modal').classList.add('o
 function closeModal(){$('#modal').classList.remove('open');form=null}
 const curOptions=sel=>[base(),...foreignCurs()].map(c=>`<option ${c===sel?'selected':''}>${esc(c)}</option>`).join('');
 
+const curSym=c=>fmtCur(0,c).replace(/[\d.,\s ]/g,'')||c;
+const EXP_METHODS=[['Cash','💵'],['Credit card','💳'],['Debit card','🏧'],['GCash / e-wallet','📱']];
 function openExpense(id){
   const e=id?expenses.find(x=>x.id===id):null;
   if(e&&e.type==='payment')return openSettle(null,null,null,e);
   const ms=members();
   const last=ls.get('ts_lastcur_'+tripId,null);
   const cur=e?eCur(e):(last&&(last===base()||rates()[last])?last:base());
-  const payer=e?e.paidBy:(me&&ms.some(m=>m.id===me)?me:ms[0].id);
-  form={id:e?e.id:null,mode:e?e.splitMode||'shares':'shares',fx:e?(e.fxMode||'trip'):'trip',sh:{},ex:{}};
+  form={id:e?e.id:null,mode:e?e.splitMode||'shares':'shares',fx:e?(e.fxMode||'trip'):'trip',sh:{},ex:{},cur,
+    payer:e?e.paidBy:(me&&ms.some(m=>m.id===me)?me:ms[0].id),cat:e?(e.category||'Others'):'Food',method:e?(e.method||'Cash'):'Cash',showSplit:false};
   ms.forEach(m=>{form.sh[m.id]=e?(e.shares&&e.shares[m.id]!=null?e.shares[m.id]:(e.splits&&e.splits[m.id]!=null?m.weight:0)):m.weight;
     form.ex[m.id]=e&&e.splits&&e.splits[m.id]!=null?(e.splits[m.id]/100).toFixed(2):''});
-  openModal(`<div class="top"><h3>${e?'Edit expense':'Add expense'}</h3><button class="x" data-act="close">×</button></div>
-   <label>Description</label><input id="fDesc" value="${esc(e?e.desc:'')}" placeholder="e.g. Ramen at Ichiran">
-   <div class="two"><div><label>Amount</label><input id="fAmt" inputmode="decimal" value="${e?(eOrig(e)/100).toFixed(ZERO.includes(cur)?0:2):''}" placeholder="0"></div>
-   <div><label>Currency</label><select id="fCur">${curOptions(cur)}</select></div></div>
+  form.showSplit=!!e&&!isDefaultSplit();
+  const descVal=e&&e.desc!==e.category?e.desc:'';
+  openModal(`<div class="top"><h3>${e?'Edit expense':'New expense'}</h3><button class="x" data-act="close" aria-label="Close">×</button></div>
+   <label>How much?</label>
+   <input id="fAmt" class="amt" inputmode="decimal" value="${e?(eOrig(e)/100).toFixed(ZERO.includes(cur)?0:2):''}" placeholder="0">
+   <div class="chips" id="curChips" style="margin-top:10px"></div>
    <div id="fxBox"></div>
-   <div class="two"><div><label>Paid by</label><select id="fPaid">${ms.map(m=>`<option value="${m.id}" ${payer===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select></div>
-   <div><label>Paid with</label><select id="fMethod">${METHODS.map(x=>`<option ${(e?e.method:'Cash')===x?'selected':''}>${x}</option>`).join('')}</select></div></div>
-   <div class="two"><div><label>Date</label><input type="date" id="fDate" value="${esc(e?e.date:today())}"></div>
-   <div><label>Category</label><select id="fCat">${Object.keys(CATS).map(c=>`<option ${e&&e.category===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div></div>
-   <label>Split</label>
-   <div class="seg"><button data-act="mode" data-m="shares" class="${form.mode==='shares'?'on':''}">Equally / by shares</button><button data-act="mode" data-m="exact" class="${form.mode==='exact'?'on':''}">Exact amounts</button></div>
-   <div id="splitBox"></div><div id="splitNote"></div>
+   <label>What was it for?</label>
+   <div class="chips" id="catChips"></div>
+   <input id="fDesc" value="${esc(descVal)}" placeholder="Note (optional), e.g. Lunch at Ichiran" style="margin-top:10px">
+   <label>Who paid?</label>
+   <div class="chips" id="payChips"></div>
+   <label>Paid with</label>
+   <div class="chips" id="methChips"></div>
+   <label>Shared by</label>
+   <div id="splitSum" class="sumbox"></div>
+   <div id="splitWrap" style="display:${form.showSplit?'':'none'}">
+     <div class="seg"><button data-act="mode" data-m="shares" class="${form.mode==='shares'?'on':''}">Equally / by shares</button><button data-act="mode" data-m="exact" class="${form.mode==='exact'?'on':''}">Exact amounts</button></div>
+     <div id="splitBox"></div></div>
+   <div id="splitNote"></div>
+   <label>Date</label><input type="date" id="fDate" value="${esc(e?e.date:today())}">
    ${e&&e.addedBy?`<div class="muted small" style="margin-top:10px">Added by ${esc(mName(e.addedBy))}${e.updatedBy&&e.updatedBy!==e.addedBy?`, last edited by ${esc(mName(e.updatedBy))}`:''}</div>`:''}
-   <div class="actions">${e?'<button class="btn danger" data-act="delExp">Delete</button>':''}<button class="btn" data-act="saveExp">${e?'Save changes':'Add expense'}</button></div>`);
+   <div class="actions sticky">${e?'<button class="btn danger" data-act="delExp">Delete</button>':'<button class="btn ghost" data-act="close">Cancel</button>'}<button class="btn" data-act="saveExp">✓ Save</button></div>`);
   form.rateVal=e&&e.fxRate?e.fxRate:'';form.billedVal=e&&e.billedC?(e.billedC/100).toFixed(2):'';
-  drawFx();drawSplit();
+  drawChips();drawFx();drawSplit();
+}
+function isDefaultSplit(){return form.mode==='shares'&&members().every(m=>(form.sh[m.id]||0)===(m.weight||0))}
+function drawChips(){
+  const ch=(act,v,label,on)=>`<button class="chip ${on?'on':''}" data-act="${act}" data-v="${esc(v)}">${label}</button>`;
+  const curs=[base(),...foreignCurs()];
+  $('#curChips').innerHTML=curs.length>1?curs.map(c=>ch('cur',c,`${esc(curSym(c))} ${esc(c)}`,form.cur===c)).join(''):'';
+  $('#catChips').innerHTML=Object.entries(CATS).map(([k,i])=>ch('cat',k,`${i} ${esc(k)}`,form.cat===k)).join('');
+  $('#payChips').innerHTML=members().map(m=>ch('payer',m.id,esc(m.name)+(m.id===me?' (me)':''),form.payer===m.id)).join('');
+  const meths=EXP_METHODS.slice();if(!meths.some(x=>x[0]===form.method))meths.push([form.method,'🏦']);
+  $('#methChips').innerHTML=meths.map(([k,i])=>ch('meth',k,`${i} ${esc(k)}`,form.method===k)).join('');
 }
 function drawFx(){
-  const box=$('#fxBox');if(!box||!form)return;const cur=$('#fCur').value;
-  if(cur===base()){box.innerHTML='';return}
+  const box=$('#fxBox');if(!box||!form)return;const cur=form.cur;
+  if(cur===base()){box.innerHTML='';updCalc();return}
   const tr=rates()[cur];
   box.innerHTML=`<label>How was it converted to ${esc(base())}?</label>
    <div class="seg" style="margin-top:0"><button data-act="fx" data-f="trip" class="${form.fx==='trip'?'on':''}">Trip rate</button><button data-act="fx" data-f="custom" class="${form.fx==='custom'?'on':''}">My rate</button><button data-act="fx" data-f="billed" class="${form.fx==='billed'?'on':''}">Card bill</button></div>
-   ${form.fx==='trip'?`<div class="muted small" style="margin-top:6px">${tr?`1 ${esc(cur)} = ${tr} ${esc(base())} (estimate, follows the trip rate)`:`<span class="neg">No trip rate for ${esc(cur)} yet. Add it in Trip setup or use My rate.</span>`}</div>`:''}
-   ${form.fx==='custom'?`<div class="row" style="border:0"><span class="small">1 ${esc(cur)} =</span><input id="fRate" inputmode="decimal" value="${esc(form.rateVal||tr||'')}" style="width:120px"><span class="small">${esc(base())}</span></div><div class="muted small">Money changer or ATM rate you actually got. Locked to this expense.</div>`:''}
-   ${form.fx==='billed'?`<div class="row" style="border:0"><span class="small">Charged</span><input id="fBilled" inputmode="decimal" value="${esc(form.billedVal)}" placeholder="leave blank until it posts" style="flex:1"><span class="small">${esc(base())}</span></div><div class="muted small">Actual ${esc(base())} on the card app or statement, including FX fees. Until then it uses the trip rate and shows as pending.</div>`:''}
+   ${form.fx==='trip'?`<div class="muted small" style="margin-top:6px">${tr?`1 ${esc(cur)} = ${tr} ${esc(base())} (estimate)`:`<span class="neg">No trip rate for ${esc(cur)} yet. Add it in Setup or use My rate.</span>`}</div>`:''}
+   ${form.fx==='custom'?`<div class="row" style="border:0"><span class="small">1 ${esc(cur)} =</span><input id="fRate" inputmode="decimal" value="${esc(form.rateVal||tr||'')}" style="width:130px"><span class="small">${esc(base())}</span></div><div class="muted small">Rate you actually got from a money changer or ATM.</div>`:''}
+   ${form.fx==='billed'?`<div class="row" style="border:0"><span class="small">Charged</span><input id="fBilled" inputmode="decimal" value="${esc(form.billedVal)}" placeholder="fill in later" style="flex:1"><span class="small">${esc(base())}</span></div><div class="muted small">Leave blank for now. Fill in the ${esc(base())} amount when it shows on the card app.</div>`:''}
    <div id="fxNote"></div>`;
   updCalc();
 }
 function drawSplit(){
-  const ms=members();const box=$('#splitBox');if(!box)return;const cur=$('#fCur').value;
+  const ms=members();const box=$('#splitBox');if(!box)return;const cur=form.cur;
   if(form.mode==='shares'){
-    box.innerHTML=`<div style="display:flex;gap:8px;margin:10px 0 4px"><button class="btn sm ghost" data-act="all">Everyone</button><button class="btn sm ghost" data-act="none">Clear</button></div>`+
-     ms.map(m=>`<div class="mrow"><input type="checkbox" data-ck="${m.id}" ${form.sh[m.id]>0?'checked':''}><span>${esc(m.name)}</span><input type="number" step="0.5" min="0" data-sh="${m.id}" value="${form.sh[m.id]}"><span class="calc" data-cv="${m.id}"></span></div>`).join('');
+    box.innerHTML=`<div style="display:flex;gap:8px;margin:10px 0 4px"><button class="btn sm ghost" data-act="all">Everyone</button><button class="btn sm ghost" data-act="none">Nobody</button></div>`+
+     ms.map(m=>`<div class="mrow"><input type="checkbox" data-ck="${m.id}" ${form.sh[m.id]>0?'checked':''}><span>${esc(m.name)}</span><input type="number" step="0.5" min="0" data-sh="${m.id}" value="${form.sh[m.id]}"><span class="calc" data-cv="${m.id}"></span></div>`).join('')+
+     `<div class="muted small" style="margin-top:6px">Tick who shares this. The number is their share (e.g. 0.5 for a child).</div>`;
   }else{
-    box.innerHTML=`<div class="muted small" style="margin:10px 0 4px">Amounts in ${esc(cur)}. Leave blank for members not included.</div>`+
+    box.innerHTML=`<div class="muted small" style="margin:10px 0 4px">Amounts in ${esc(cur)}. Leave blank for people not included.</div>`+
      ms.map(m=>`<div class="mrow"><span></span><span>${esc(m.name)}</span><span></span><input inputmode="decimal" data-ex="${m.id}" value="${form.ex[m.id]}" placeholder="0"></div>`).join('');
   }
   updCalc();
 }
 function draftExpense(){
-  const cur=$('#fCur').value,T=toC($('#fAmt').value);
+  const cur=form.cur,T=toC($('#fAmt').value);
   const d={currency:cur,origC:T,fxMode:cur===base()?null:form.fx};
   if(form.fx==='custom'){const r=$('#fRate');form.rateVal=r?r.value:form.rateVal;d.fxRate=num(form.rateVal)}
   if(form.fx==='billed'){const b=$('#fBilled');form.billedVal=b?b.value:form.billedVal;d.billedC=toC(form.billedVal)}
@@ -448,30 +498,36 @@ function draftExpense(){
 function updCalc(){
   const amtEl=$('#fAmt');if(!amtEl||!form)return;const d=draftExpense();const T=d.origC,cur=d.currency;const note=$('#splitNote');
   const fxn=$('#fxNote');if(fxn){const b=baseC(d);fxn.innerHTML=T>0?(b>0?`<div class="note ok">= ${fmt(b)}${isEst(d)?' (estimate)':''}</div>`:`<div class="note bad">No rate yet, so this counts as zero.</div>`):''}
+  const sum=$('#splitSum');
   if(form.mode==='shares'){const al=allocate(T,form.sh)||{};
     members().forEach(m=>{const el=document.querySelector(`[data-cv="${m.id}"]`);if(el)el.textContent=form.sh[m.id]>0&&T>0?fmtCur(al[m.id]||0,cur):'–'});
-    const n=Object.values(form.sh).filter(x=>x>0).length;note.innerHTML=n?'':'<div class="note bad">Pick at least one person.</div>';
+    const ids=Object.keys(form.sh).filter(k=>form.sh[k]>0);
+    if(sum){const who=isDefaultSplit()?'Everyone':ids.map(mName).join(', ')||'Nobody yet';
+      const each=T>0&&ids.length?ids.map(k=>`<div class="srow"><span>${esc(mName(k))}</span><b>${fmtCur(al[k]||0,cur)}</b></div>`).join(''):'';
+      sum.innerHTML=`<div class="srow"><b>${esc(who)}</b>${form.showSplit?'':'<button class="linkbtn" data-act="showSplit">Change</button>'}</div>${each}`}
+    note.innerHTML=ids.length?'':'<div class="note bad">Pick at least one person.</div>';
   }else{let s=0;members().forEach(m=>s+=toC(form.ex[m.id]));const df=T-s;
+    if(sum)sum.innerHTML=`<div class="srow"><b>Exact amounts per person</b></div>`;
     note.innerHTML=df===0&&T>0?`<div class="note ok">Adds up to ${fmtCur(T,cur)}.</div>`:`<div class="note bad">${df>0?fmtCur(df,cur)+' left to assign':fmtCur(-df,cur)+' over the total'}</div>`}
 }
 function saveExp(){
-  const desc=$('#fDesc').value.trim(),d=draftExpense(),T=d.origC,cur=d.currency;
-  if(!desc)return toast('Add a description');if(T<=0)return toast('Enter an amount');
+  const d=draftExpense(),T=d.origC,cur=d.currency;const desc=$('#fDesc').value.trim()||form.cat;
+  if(T<=0){toast('Type the amount first');$('#fAmt').focus();return}
   if(cur!==base()){
-    if(d.fxMode==='trip'&&!(rates()[cur]>0))return toast(`Set a ${cur} trip rate first, or use My rate`);
+    if(d.fxMode==='trip'&&!(rates()[cur]>0))return toast(`Set a ${cur} rate in Setup first, or use My rate`);
     if(d.fxMode==='custom'&&!(d.fxRate>0))return toast('Enter the rate you got');
-    if(d.fxMode==='billed'&&!(d.billedC>0)&&!(rates()[cur]>0))return toast(`Add a ${cur} trip rate for the estimate`);
+    if(d.fxMode==='billed'&&!(d.billedC>0)&&!(rates()[cur]>0))return toast(`Add a ${cur} trip rate in Setup first`);
   }
   let splits;
-  if(form.mode==='shares'){splits=allocate(T,form.sh);if(!splits)return toast('Pick at least one person')}
-  else{splits={};let s=0;members().forEach(m=>{const c=toC(form.ex[m.id]);if(c>0){splits[m.id]=c;s+=c}});if(s!==T)return toast('Exact amounts must add up to the total')}
+  if(form.mode==='shares'){splits=allocate(T,form.sh);if(!splits)return toast('Pick who shares this')}
+  else{splits={};let s=0;members().forEach(m=>{const c=toC(form.ex[m.id]);if(c>0){splits[m.id]=c;s+=c}});if(s!==T)return toast('Amounts per person must add up to the total')}
   const old=form.id?expenses.find(x=>x.id===form.id):null;
   const e={id:form.id||newId(),type:'expense',desc,currency:cur,origC:T,fxMode:d.fxMode,fxRate:d.fxMode==='custom'?d.fxRate:null,billedC:d.fxMode==='billed'&&d.billedC>0?d.billedC:null,
-    method:$('#fMethod').value,date:$('#fDate').value||today(),paidBy:$('#fPaid').value,category:$('#fCat').value,splitMode:form.mode,splits,
+    method:form.method,date:$('#fDate').value||today(),paidBy:form.payer,category:form.cat,splitMode:form.mode,splits,
     shares:form.mode==='shares'?Object.fromEntries(Object.entries(form.sh).filter(([k,v])=>v>0)):null,
     createdAt:old?old.createdAt:Date.now(),addedBy:old?(old.addedBy||null):(me||null),updatedBy:me||null};
   ls.set('ts_lastcur_'+tripId,cur);
-  store.putExpense(e);closeModal();toast(old?'Saved':'Expense added');
+  store.putExpense(e);closeModal();toast(old?'✓ Saved':`✓ Saved ${fmtCur(T,cur)} for ${desc}`);
 }
 
 function openSettle(from,to,c,existing){
@@ -549,6 +605,11 @@ document.addEventListener('click',async ev=>{
   else if(a==='fx'){draftExpense();form.fx=b.dataset.f;drawFx()}
   else if(a==='all'){members().forEach(m=>{if(!(form.sh[m.id]>0))form.sh[m.id]=m.weight||1});drawSplit()}
   else if(a==='none'){members().forEach(m=>form.sh[m.id]=0);drawSplit()}
+  else if(a==='cur'){draftExpense();form.cur=b.dataset.v;if(form.method==='Credit card'&&form.cur!==base()&&form.fx==='trip')form.fx='billed';drawChips();drawFx();drawSplit()}
+  else if(a==='cat'){form.cat=b.dataset.v;drawChips()}
+  else if(a==='payer'){form.payer=b.dataset.v;drawChips()}
+  else if(a==='meth'){draftExpense();form.method=b.dataset.v;if(form.cur!==base()){if(form.method==='Credit card'&&form.fx==='trip')form.fx='billed';else if(form.method!=='Credit card'&&form.fx==='billed'&&!form.billedVal)form.fx='trip'}drawChips();drawFx()}
+  else if(a==='showSplit'){form.showSplit=true;$('#splitWrap').style.display='';updCalc()}
   else if(a==='saveExp')saveExp();
   else if(a==='savePay')savePay();
   else if(a==='delExp'){if(b.dataset.armed){store.delExpense(form.id);closeModal();toast('Deleted')}else{b.dataset.armed='1';b.textContent='Tap again to delete'}}
@@ -587,7 +648,7 @@ document.addEventListener('change',ev=>{
 });
 document.addEventListener('keydown',ev=>{if(ev.key==='Enter'&&ev.target.id==='newM'){ev.preventDefault();const b=document.querySelector('[data-act="addMember"]');if(b)b.click()}if(ev.key==='Escape')closeModal()});
 
-let tt;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2400)}
+let tt;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),3500)}
 
 if('serviceWorker' in navigator&&location.protocol==='https:'){navigator.serviceWorker.register('sw.js').catch(()=>{})}
 render();
